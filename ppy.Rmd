@@ -1,0 +1,340 @@
+---
+title: 'Project: Expectation Maximization Algorithm'
+author: "Victor Apatu"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+The Expectation-Maximization (E-M) Algorithm is an iterative method for finding the maximum likelihood estimates (MLE) of parameters in statistical models where the data is incomplete, has missing values, or involves latent variables. the EM model simply operates on bayesian assumption by finding a latent missing variable given what has been observed.
+
+### How Does it Work?
+
+#### Bayesian Assumption
+
+The EM algorithm assumes a probabilistic framework, treating missing or latent variables as random variables drawn from a specific distribution, by estimating the posterior probability of the latent variables given the observed data.
+
+The E-M model can be largely be classified in two (2) main steps:
+
+### The E-step (Expectation)
+
+1.  Calculate the expected value of the latent variables based on the current parameter estimates: Think of this as "filling in" the missing data using conditional probabilities. $$
+    Q(\theta | \theta^{(t)}) = \mathbb{E}_{Z | X, \theta^{(t)}} \left[ \log P(X, Z | \theta) \right].
+    $$
+
+#### The M-step (Maximization)
+
+2.  Update the parameter estimates by maximizing the expected log-likelihood: $$
+    \theta^{(t+1)} = \arg \max_\theta Q(\theta | \theta^{(t)}).
+    $$
+3.  Reapeat step 1 and 2 until it converges.
+
+### Example 1
+
+Lets consider a simple example where $Y_1, Y_2 \sim \text{i.i.d. Exp}(\theta)$. Suppose $y_1 = 5$ is observed but the value $y_2$ is missing. The complete-data log likelihood function is
+
+$$
+\log f_Y(y|\theta) = 2 \log \{\theta\} - \theta y_1 - \theta y_2.
+$$
+
+Taking the conditional expectation of $\log L(\theta|Y)$ yields
+
+$$
+Q(\theta|\theta^{(t)}) = 2 \log \{\theta\} - 5\theta - \theta E[Y_2|y_1, \theta^{(t)}],
+$$
+
+By independence, $E[Y_2|y_1, \theta^{(t)}] = E[Y_2|\theta^{(t)}] = 1 / \theta^{(t)}$ . The maximizer of $Q(\theta|\theta^{(t)})$ with respect to $\theta$ is easily found to be the root of
+
+$$
+2 / \theta - 5 - 1 / \theta^{(t)} = 0.
+$$
+
+Solving for $\theta$ provides the updating equation
+
+$$
+\theta^{(t+1)} = 2 \theta^{(t)} / (5 \theta^{(t)} + 1).
+$$
+
+```{r}
+# Observed data
+Y1 <- 5
+
+# Initial guess for theta
+theta_em <- 1 # initial guess for EM algorithm
+tolerance <- 1e-6 # convergence criterion
+max_iter <- 100 # maximum number of iterations
+iterations <- 0 # counter for iterations
+
+# EM Algorithm
+repeat {
+  iterations <- iterations + 1
+  # E-Step: Expectation of the missing value (Y2) given the current theta estimate
+  E_Y2 <- 1 / theta_em
+  
+  # M-Step: Update theta using the EM update formula
+  theta_new <- 2 / (Y1 + E_Y2)
+  
+  # Check for convergence
+  if (abs(theta_new - theta_em) < tolerance || iterations >= max_iter) {
+    break
+  }
+  
+  theta_em <- theta_new
+}
+
+
+
+
+```
+
+### For the traditional MLE Approach
+
+```{r}
+# Traditional MLE
+theta_mle <- 1 / Y1
+```
+
+#### Results
+
+```{r}
+# Results
+cat("EM Algorithm:\n")
+cat("Estimated theta:", theta_em, "\n")
+cat("Number of iterations:", iterations, "\n\n")
+
+cat("Traditional MLE:\n")
+cat("Estimated theta:", theta_mle, "\n")
+```
+
+### Gaussian Mixed Model
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(numDeriv) ## For finding the Hessian Matrix (second Derivative)
+library(boot)
+
+# Simulate data from a Gaussian Mixture Model
+set.seed(1)  
+n <- 10^4  # Total number of data points
+
+# True parameters
+mu1 <- 2; sigma1 <- 1; pi1 <- 0.6  # Component 1
+mu2 <- 6; sigma2 <- 1.5; pi2 <- 0.4  # Component 2
+
+# Generate data
+z <- rbinom(n, size = 1, prob = pi1)  # Latent variable
+x <- z * rnorm(n, mean = mu1, sd = sigma1) + (1 - z) * rnorm(n, mean = mu2, sd = sigma2)
+
+# Plot the histogram of the data
+ggplot(data.frame(x), aes(x)) +
+  geom_histogram(aes(y = ..density..), bins = 50, fill = "lightblue", color = "black") +
+  labs(title = "Simulated Data", x = "x", y = "Density")
+
+```
+
+```{r}
+# Initialize E-M algorithm
+k <- 2  # Number of components
+# Initial guesses for parameters
+mu <- c(quantile(x, 0.25), quantile(x, 0.75))
+sigma <- c(sd(x), sd(x))
+pi <- c(0.5, 0.5)
+
+log_likelihood <- function(x, mu, sigma, pi) {
+  sum(log(pi[1] * dnorm(x, mean = mu[1], sd = sigma[1]) +
+           pi[2] * dnorm(x, mean = mu[2], sd = sigma[2])))
+}
+
+# Convergence criteria
+tol <- 1e-6
+max_iter <- 1000
+ll_old <- -Inf
+
+# Store log-likelihoods
+log_lik_values <- c()
+
+# E-M Algorithm
+for (iter in 1:max_iter) {
+  # E-Step: Calculate responsibilities (posterior probabilities)
+  gamma1 <- pi[1] * dnorm(x, mean = mu[1], sd = sigma[1])
+  gamma2 <- pi[2] * dnorm(x, mean = mu[2], sd = sigma[2])
+  gamma <- gamma1 / (gamma1 + gamma2)
+
+  # M-Step: Update parameters
+  n1 <- sum(gamma)
+  n2 <- n - n1
+
+  pi[1] <- n1 / n
+  pi[2] <- n2 / n
+
+  mu[1] <- sum(gamma * x) / n1
+  mu[2] <- sum((1 - gamma) * x) / n2
+
+  sigma[1] <- sqrt(sum(gamma * (x - mu[1])^2) / n1)
+  sigma[2] <- sqrt(sum((1 - gamma) * (x - mu[2])^2) / n2)
+
+  # Calculate log-likelihood
+  ll_new <- log_likelihood(x, mu, sigma, pi)
+  log_lik_values <- c(log_lik_values, ll_new)
+
+  # Check for convergence
+  if (abs(ll_new - ll_old) < tol) {
+    cat("Converged in", iter, "iterations\n")
+    break
+  }
+
+  ll_old <- ll_new
+}
+
+# Results 
+cat("Final Estimates:\n")
+cat("Mixing Proportions:", round(pi, 3), "\n")
+cat("Means:", round(mu, 3), "\n")
+cat("Standard Deviations:", round(sigma, 3), "\n")
+```
+
+```{r}
+
+# Plot log-likelihood convergence
+plot(log_lik_values, type = "l", col = "blue", lwd = 2,
+     main = "Log-Likelihood Convergence", xlab = "Iteration", ylab = "Log-Likelihood")
+
+
+```
+
+### Variance Covariance Estimation
+
+The E-M Algorithm can be used to find the maximum likelihood estimator (MLE) but it does not directly estimate the variance-covariance matrix of the MLEs. The E-M algorithm relies heavily on asymptotic normality of the MLEs to estimate the variance covariance matrix. In Bayesian methods the Hessian matrix provides a good foundation for the estimation of the variance covariance matrix.
+
+#### The Hessian Approach
+
+```{r}
+# Hessian Variance-Covariance Matrix
+params <- c(pi, mu, sigma)
+hessian <- hessian(function(params) {
+  pi <- params[1:2]
+  mu <- params[3:4]
+  sigma <- params[5:6]
+  log_likelihood(x, mu, sigma, pi)
+}, params)
+var_cov_hessian <- solve(-hessian)  # Inverse of negative Hessian
+cat("\nVariance-Covariance Matrix (Hessian):\n")
+print(var_cov_hessian)
+
+
+```
+
+### Example 3: Old Faithful Dataset
+
+This is a dataset that contains 272 observations of eruptions from the Old Faithful geyser in Yellowstone National Park, USA. The dataset consists of two key variables:
+
+1.  Eruption Duration: The duration (in minutes) of each geyser eruption.
+2.  Waiting Time: The waiting time (in minutes) between successive eruptions.
+
+In this case we are interested in X =waiting time
+
+$X$: Waiting time
+
+$p$: Probability of shorter waiting time
+
+$\theta = (p, \mu_1, \mu_2, \sigma_1, \sigma_2)$
+
+$f(x \mid \theta) = p \mathcal{N}(\mu_1, \sigma_1) + (1-p) \mathcal{N}(\mu_2, \sigma_2)$
+
+$Y_i =
+    \begin{cases}
+    1 & \text{if shorter waiting time,} \\
+    0 & \text{otherwise}
+    \end{cases}$ $Y_i \sim \text{Bernoulli}(p)$ and $Y_i$ is missing
+
+```{r}
+
+x <- faithful$waiting  
+n <- length(x)  # Count (sample)
+hist(x, probability = TRUE, col = "lightblue", border = "black",
+     main = "Gaussian Mixture Model Fit", xlab = "Waiting Time (minutes)", ylab = "Density")
+
+```
+
+```{r}
+
+x <- faithful$waiting  
+n <- length(x)  # Count (sample)
+
+# Initialize parameters
+set.seed(1)
+k <- 2  # Number of components
+mu <- quantile(x, probs = c(0.25, 0.75))  # Initial means
+sigma <- rep(sd(x), k)  # Initial standard deviations
+pi <- rep(1/k, k)  # Equal mixing proportions
+tol <- 1e-6  # Convergence tolerance
+max_iter <- 10000  # Maximum iterations
+
+# Log-likelihood function
+log_likelihood <- function(x, mu, sigma, pi) {
+  sum(log(rowSums(sapply(1:k, function(i) pi[i] * dnorm(x, mean = mu[i], sd = sigma[i])))))
+}
+
+# EM Algorithm
+log_lik_values <- c()
+ll_old <- -Inf
+
+for (iter in 1:max_iter) {
+  # E-Step: Calculate responsibilities (posterior probabilities)
+  gamma <- sapply(1:k, function(i) pi[i] * dnorm(x, mean = mu[i], sd = sigma[i]))
+  gamma <- gamma / rowSums(gamma)  # Normalize
+
+  # M-Step: Update parameters
+  n_k <- colSums(gamma)  # Effective number of data points per component
+  pi <- n_k / n
+  mu <- colSums(gamma * x) / n_k
+  sigma <- sqrt(colSums(gamma * (x - mu)^2) / n_k)
+
+  # Calculate log-likelihood
+  ll_new <- log_likelihood(x, mu, sigma, pi)
+  log_lik_values <- c(log_lik_values, ll_new)
+
+  # Check for convergence
+  if (abs(ll_new - ll_old) < tol) {
+    cat("Converged in", iter, "iterations\n")
+    break
+  }
+  ll_old <- ll_new
+}
+
+# Output results
+cat("Final Estimates:\n")
+cat("Mixing Proportions:", round(pi, 3), "\n")
+cat("Means:", round(mu, 3), "\n")
+cat("Standard Deviations:", round(sigma, 3), "\n")
+```
+
+### Covariance Estimation
+
+```{r}
+# Hessian approach for covariance matrix
+
+param_vector <- c(pi, mu, sigma)  # Combine parameters
+log_lik_func <- function(params) {
+  pi <- params[1:k]
+  mu <- params[(k + 1):(2 * k)]
+  sigma <- params[(2 * k + 1):(3 * k)]
+  sum(log(rowSums(sapply(1:k, function(i) pi[i] * dnorm(x, mean = mu[i], sd = sigma[i])))))
+}
+
+hessian_matrix <- hessian(log_lik_func, param_vector)
+cov_matrix_hessian <- solve(-hessian_matrix)
+cat("\nCovariance Matrix (Hessian):\n")
+print(cov_matrix_hessian)
+
+```
+
+#### Reference
+
+Givens, G. H., & Hoeting, J. A. (2012). Computational statistics. John Wiley & Sons.
