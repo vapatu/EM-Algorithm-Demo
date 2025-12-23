@@ -1,0 +1,1 @@
+This project walks through the Expectation–Maximization (EM) algorithm using a Gaussian Mixture Model, implemented in R. It shows how EM handles hidden group membership by alternating between probability estimation and parameter updates, highlighting convergence behavior, likelihood improvement, sensitivity to initialization and areas of application.
